@@ -482,3 +482,61 @@ def run_benchmark(owl_url: str, owl_token: str, output_dir: Path) -> int:
 
     logger.info("=== Benchmark complete ===")
     return 0
+
+
+def run_concurrency_only(owl_url: str, owl_token: str, output_dir: Path) -> int:
+    """Run only the concurrency benchmark and merge into existing benchmark.json."""
+    from datetime import datetime, timezone
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / "benchmark.json"
+
+    # Load existing benchmark data
+    existing: dict[str, Any] = {}
+    if report_path.exists():
+        try:
+            existing = json.loads(report_path.read_text())
+            logger.info("Loaded existing benchmark.json")
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Could not read existing benchmark.json, starting fresh")
+
+    client = OwlClient(owl_url, owl_token)
+    owl_version = client.get_version()
+    logger.info("Owl Browser version: %s", owl_version)
+
+    # Run concurrency benchmark
+    try:
+        concurrency = _bench_concurrency(client)
+        existing["concurrency"] = {
+            "levels": CONCURRENCY_LEVELS,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "methodology": (
+                f"At each concurrency level ({', '.join(str(n) for n in CONCURRENCY_LEVELS)} sessions), "
+                "all sessions launch simultaneously and each performs: create → navigate (domcontentloaded) → screenshot → close. "
+                "Playwright and Puppeteer each launch a separate browser process per session. "
+                "Owl Browser creates lightweight contexts within a single running engine. "
+                "Total time = wall clock from first launch to last completion."
+            ),
+            "browsers": concurrency,
+        }
+    except Exception:
+        logger.error("Concurrency benchmark failed", exc_info=True)
+        return 1
+
+    # Write merged report
+    report_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
+    logger.info("Wrote updated benchmark to %s", report_path)
+
+    # S3 upload
+    if s3_configured():
+        logger.info("=== Uploading to S3 ===")
+        try:
+            upload_directory(output_dir)
+        except Exception:
+            logger.error("S3 upload failed", exc_info=True)
+            return 1
+    else:
+        logger.info("S3 not configured, skipping upload")
+
+    logger.info("=== Concurrency benchmark complete ===")
+    return 0

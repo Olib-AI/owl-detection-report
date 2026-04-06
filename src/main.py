@@ -124,10 +124,10 @@ def run_detection_report() -> int:
 
 
 def main() -> int:
-    mode = sys.argv[1] if len(sys.argv) > 1 else "report"
+    args = set(sys.argv[1:])
 
-    if mode == "--benchmark":
-        from .benchmark import run_benchmark
+    if "--benchmark" in args or "--concurrency" in args:
+        from .benchmark import run_benchmark, run_concurrency_only
 
         owl_url = os.environ.get("OWL_BROWSER_URL")
         owl_token = os.environ.get("OWL_BROWSER_TOKEN")
@@ -137,6 +137,8 @@ def main() -> int:
             logger.error("OWL_BROWSER_URL and OWL_BROWSER_TOKEN are required")
             return 1
 
+        if "--concurrency" in args:
+            return run_concurrency_only(owl_url, owl_token, output_dir)
         return run_benchmark(owl_url, owl_token, output_dir)
     else:
         return run_detection_report()
