@@ -56,7 +56,7 @@ docker run --rm \
   ghcr.io/olib-ai/owl-detection-report:latest
 ```
 
-### 4. Run benchmark
+### 4. Run benchmark (sequential + concurrency)
 
 ```bash
 docker run --rm \
@@ -66,7 +66,19 @@ docker run --rm \
   ghcr.io/olib-ai/owl-detection-report:latest --benchmark
 ```
 
-### 5. Set up daily cron
+### 5. Run concurrency benchmark only
+
+Keeps existing sequential data, only updates concurrency results:
+
+```bash
+docker run --rm \
+  --network host \
+  --env-file .env \
+  -v $(pwd)/output:/output \
+  ghcr.io/olib-ai/owl-detection-report:latest --concurrency
+```
+
+### 6. Set up daily cron
 
 ```bash
 crontab -e
