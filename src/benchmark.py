@@ -173,7 +173,7 @@ def _bench_puppeteer() -> dict[str, Any]:
     script = Path(__file__).parent / "puppeteer_benchmark.js"
     result = subprocess.run(
         ["node", str(script), str(ITERATIONS), TARGET_URL],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True, text=True, timeout=7200,
     )
     if result.returncode != 0:
         logger.error("Puppeteer benchmark stderr: %s", result.stderr)
