@@ -59,7 +59,7 @@ def _bench_owl(client: OwlClient) -> dict[str, Any]:
             client._execute("browser_navigate", {
                 "context_id": context_id,
                 "url": TARGET_URL,
-                "wait_until": "networkidle",
+                "wait_until": "domcontentloaded",
             })
             navigate_ms = (time.perf_counter() - t0) * 1000
             navigate_times.append(navigate_ms)
@@ -127,7 +127,7 @@ def _bench_playwright() -> dict[str, Any]:
 
             # Navigate
             t0 = time.perf_counter()
-            page.goto(TARGET_URL, wait_until="networkidle", timeout=30_000)
+            page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
             navigate_ms = (time.perf_counter() - t0) * 1000
             navigate_times.append(navigate_ms)
 

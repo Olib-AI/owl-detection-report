@@ -67,7 +67,7 @@ function stats(arr) {
 
     // Navigate
     t0 = performance.now();
-    await page.goto(targetUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const navMs = performance.now() - t0;
     navTimes.push(navMs);
 
