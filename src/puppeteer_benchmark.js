@@ -56,7 +56,7 @@ function stats(arr) {
     const browser = await puppeteer.launch({
       executablePath,
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--ignore-certificate-errors'],
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
