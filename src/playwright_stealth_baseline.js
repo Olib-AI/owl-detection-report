@@ -5,14 +5,25 @@
 
 const { chromium } = require('playwright-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { execSync } = require('child_process');
 
 chromium.use(StealthPlugin());
 
 const CREEPJS_URL = 'https://abrahamjuliot.github.io/creepjs/';
 const WAIT_MS = 15000;
 
+function findChromium() {
+  try {
+    const out = execSync('find /root/.cache/ms-playwright -name "chrome" -type f ! -name "*headless*" 2>/dev/null | head -1', { encoding: 'utf-8' }).trim();
+    if (out) return out;
+  } catch {}
+  throw new Error('No Chromium binary found');
+}
+
 (async () => {
+  const executablePath = findChromium();
   const browser = await chromium.launch({
+    executablePath,
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
