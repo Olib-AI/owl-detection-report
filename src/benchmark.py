@@ -201,11 +201,12 @@ def run_benchmark(owl_url: str, owl_token: str, output_dir: Path) -> int:
         "owl_version": owl_version,
         "methodology": (
             f"Each browser performs {ITERATIONS} sequential iterations of: "
-            "create/launch → navigate to target URL (wait for networkidle) → "
+            "create/launch → navigate to target URL (wait for domcontentloaded) → "
             "capture screenshot → close. All times in milliseconds. "
-            "Playwright and Puppeteer launch a new browser process each iteration (cold start). "
-            "Owl Browser creates a new context within the running engine. "
-            "Same machine, same Docker container, same network, sequential execution."
+            "Playwright and Puppeteer run inside the benchmark container (local process). "
+            "Owl Browser runs in a separate container and is accessed via REST API over localhost, "
+            "adding ~5-10ms of network overhead per API call — Owl's real times are faster than shown. "
+            "Sequential execution, same machine."
         ),
         "browsers": {},
     }
