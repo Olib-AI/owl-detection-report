@@ -50,6 +50,7 @@ S3_PREFIX=detection-reports
 
 ```bash
 docker run --rm \
+  --network host \
   --env-file .env \
   -v $(pwd)/output:/output \
   ghcr.io/olib-ai/owl-detection-report:latest
@@ -59,6 +60,7 @@ docker run --rm \
 
 ```bash
 docker run --rm \
+  --network host \
   --env-file .env \
   -v $(pwd)/output:/output \
   ghcr.io/olib-ai/owl-detection-report:latest --benchmark
@@ -72,10 +74,10 @@ crontab -e
 
 ```cron
 # Detection report — daily at 3am UTC
-0 3 * * * docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
+0 3 * * * docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
 
 # Benchmark — weekly on Sunday at 4am UTC
-0 4 * * 0 docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
+0 4 * * 0 docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
 ```
 
 > When using S3 upload, the `-v` volume mount is optional since files go directly to S3.
@@ -88,10 +90,10 @@ cd owl-detection-report
 docker build -t owl-detection-report .
 
 # Detection report
-docker run --rm --env-file .env -v $(pwd)/output:/output owl-detection-report
+docker run --rm --network host --env-file .env -v $(pwd)/output:/output owl-detection-report
 
 # Benchmark
-docker run --rm --env-file .env -v $(pwd)/output:/output owl-detection-report --benchmark
+docker run --rm --network host --env-file .env -v $(pwd)/output:/output owl-detection-report --benchmark
 ```
 
 ## Environment Variables
@@ -157,15 +159,15 @@ sudo nano /etc/owl-report.env
 
 # Test detection report
 docker pull ghcr.io/olib-ai/owl-detection-report:latest
-docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest
+docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest
 
 # Test benchmark
-docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark
+docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark
 
 # Set up cron
 crontab -e
-# 0 3 * * * docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
-# 0 4 * * 0 docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
+# 0 3 * * * docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
+# 0 4 * * 0 docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
 ```
 
 ### Updating
