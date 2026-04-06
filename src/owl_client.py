@@ -34,6 +34,10 @@ class OwlClient:
         self._session.headers.update(
             {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         )
+        # Increase connection pool for concurrency benchmarks
+        adapter = requests.adapters.HTTPAdapter(pool_connections=200, pool_maxsize=200)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
 
     def _execute(self, tool_name: str, payload: dict[str, object] | None = None) -> object:
         url = f"{self._base_url}{self._api_prefix}/execute/{tool_name}"
