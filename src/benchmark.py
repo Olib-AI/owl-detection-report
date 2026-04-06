@@ -15,7 +15,7 @@ from .s3_uploader import s3_configured, upload_directory
 logger = logging.getLogger(__name__)
 
 TARGET_URL = "https://example.com"
-ITERATIONS = 10
+ITERATIONS = 1000
 
 
 def _stats(times: list[float]) -> dict[str, float]:
