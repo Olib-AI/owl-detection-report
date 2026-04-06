@@ -288,38 +288,40 @@ def _concurrent_owl(client: OwlClient, n: int) -> dict[str, Any]:
     }
 
 
-def _concurrent_playwright(n: int) -> dict[str, Any]:
-    """Spawn N Playwright browser instances concurrently."""
+def _playwright_single_session(target_url: str) -> dict[str, Any]:
+    """Run a single Playwright session — must be top-level for ProcessPoolExecutor."""
     from playwright.sync_api import sync_playwright
+    try:
+        with sync_playwright() as pw:
+            t0 = time.perf_counter()
+            browser = pw.chromium.launch(
+                headless=True,
+                args=["--ignore-certificate-errors"],
+            )
+            page = browser.new_page(viewport={"width": 1920, "height": 1080})
+            launch_ms = (time.perf_counter() - t0) * 1000
 
-    def _single_session(_: int) -> dict[str, Any]:
-        try:
-            with sync_playwright() as pw:
-                t0 = time.perf_counter()
-                browser = pw.chromium.launch(
-                    headless=True,
-                    args=["--ignore-certificate-errors"],
-                )
-                page = browser.new_page(viewport={"width": 1920, "height": 1080})
-                launch_ms = (time.perf_counter() - t0) * 1000
+            t0 = time.perf_counter()
+            page.goto(target_url, wait_until="domcontentloaded", timeout=30_000)
+            nav_ms = (time.perf_counter() - t0) * 1000
 
-                t0 = time.perf_counter()
-                page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
-                nav_ms = (time.perf_counter() - t0) * 1000
+            t0 = time.perf_counter()
+            page.screenshot()
+            shot_ms = (time.perf_counter() - t0) * 1000
 
-                t0 = time.perf_counter()
-                page.screenshot()
-                shot_ms = (time.perf_counter() - t0) * 1000
+            browser.close()
+            return {"success": True, "launch": launch_ms, "navigate": nav_ms, "screenshot": shot_ms}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
 
-                browser.close()
-                return {"success": True, "launch": launch_ms, "navigate": nav_ms, "screenshot": shot_ms}
-        except Exception as exc:
-            return {"success": False, "error": str(exc)}
+
+def _concurrent_playwright(n: int) -> dict[str, Any]:
+    """Spawn N Playwright browser instances concurrently using separate processes."""
 
     t_start = time.perf_counter()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
-        futures = [pool.submit(_single_session, i) for i in range(n)]
-        results = [f.result() for f in futures]
+    with concurrent.futures.ProcessPoolExecutor(max_workers=n) as pool:
+        futures = [pool.submit(_playwright_single_session, TARGET_URL) for _ in range(n)]
+        results = [f.result(timeout=120) for f in futures]
     total_ms = (time.perf_counter() - t_start) * 1000
 
     succeeded = [r for r in results if r["success"]]
