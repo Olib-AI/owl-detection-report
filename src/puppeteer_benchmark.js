@@ -22,6 +22,7 @@ function findChromium() {
 function round2(n) { return Math.round(n * 100) / 100; }
 
 function stats(arr) {
+  if (!arr.length) return { min: 0, max: 0, avg: 0, median: 0, p95: 0 };
   const sorted = [...arr].sort((a, b) => a - b);
   const p95Idx = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
   const sum = sorted.reduce((a, b) => a + b, 0);
@@ -47,48 +48,72 @@ function stats(arr) {
   const closeTimes = [];
   const cycleTimes = [];
   let version = 'unknown';
+  let errors = 0;
+  const MAX_RETRIES = 3;
 
   for (let i = 0; i < iterations; i++) {
-    const cycleStart = performance.now();
+    let retries = 0;
+    let success = false;
 
-    // Launch (cold start)
-    let t0 = performance.now();
-    const browser = await puppeteer.launch({
-      executablePath,
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--ignore-certificate-errors'],
-    });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
-    const launchMs = performance.now() - t0;
-    launchTimes.push(launchMs);
+    while (retries < MAX_RETRIES && !success) {
+      let browser;
+      try {
+        const cycleStart = performance.now();
 
-    if (i === 0) version = await browser.version();
+        // Launch (cold start)
+        let t0 = performance.now();
+        browser = await puppeteer.launch({
+          executablePath,
+          headless: 'new',
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--ignore-certificate-errors'],
+        });
+        const page = await browser.newPage();
+        await page.setViewport({ width: 1920, height: 1080 });
+        const launchMs = performance.now() - t0;
 
-    // Navigate
-    t0 = performance.now();
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const navMs = performance.now() - t0;
-    navTimes.push(navMs);
+        if (i === 0 && retries === 0) version = await browser.version();
 
-    // Screenshot
-    t0 = performance.now();
-    await page.screenshot();
-    const shotMs = performance.now() - t0;
-    shotTimes.push(shotMs);
+        // Navigate
+        t0 = performance.now();
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        const navMs = performance.now() - t0;
 
-    // Close
-    t0 = performance.now();
-    await browser.close();
-    const closeMs = performance.now() - t0;
-    closeTimes.push(closeMs);
+        // Screenshot
+        t0 = performance.now();
+        await page.screenshot();
+        const shotMs = performance.now() - t0;
 
-    const cycleMs = performance.now() - cycleStart;
-    cycleTimes.push(cycleMs);
+        // Close
+        t0 = performance.now();
+        await browser.close();
+        browser = null;
+        const closeMs = performance.now() - t0;
+
+        const cycleMs = performance.now() - cycleStart;
+
+        launchTimes.push(launchMs);
+        navTimes.push(navMs);
+        shotTimes.push(shotMs);
+        closeTimes.push(closeMs);
+        cycleTimes.push(cycleMs);
+        success = true;
+      } catch (err) {
+        retries++;
+        if (browser) {
+          try { await browser.close(); } catch {}
+        }
+        if (retries >= MAX_RETRIES) {
+          errors++;
+          process.stderr.write(`Iteration ${i + 1}: failed after ${MAX_RETRIES} retries: ${err.message}\n`);
+        }
+      }
+    }
   }
 
   const result = {
     version,
+    completed: launchTimes.length,
+    errors,
     browser_launch: stats(launchTimes),
     navigation: stats(navTimes),
     screenshot: stats(shotTimes),

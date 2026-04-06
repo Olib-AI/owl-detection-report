@@ -14,7 +14,7 @@ from .s3_uploader import s3_configured, upload_directory
 
 logger = logging.getLogger(__name__)
 
-TARGET_URL = "http://example.com"
+TARGET_URL = "https://example.com"
 ITERATIONS = 1000
 
 
