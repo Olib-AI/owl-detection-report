@@ -369,7 +369,9 @@ def _bench_concurrency(client: OwlClient) -> dict[str, Any]:
         try:
             owl_r = _concurrent_owl(client, n)
             results["owl"].append(owl_r)
-            logger.info("  Owl: %d/%d succeeded in %.0fms", owl_r["succeeded"], n, owl_r["total_time_ms"])
+            logger.info("  Owl: %d/%d succeeded in %.0fms (avg create=%.0fms nav=%.0fms shot=%.0fms)",
+                        owl_r["succeeded"], n, owl_r["total_time_ms"],
+                        owl_r.get("avg_create_ms", 0), owl_r.get("avg_navigate_ms", 0), owl_r.get("avg_screenshot_ms", 0))
         except Exception:
             logger.error("  Owl concurrency failed at %d", n, exc_info=True)
             results["owl"].append({"sessions": n, "succeeded": 0, "failed": n, "total_time_ms": 0})
