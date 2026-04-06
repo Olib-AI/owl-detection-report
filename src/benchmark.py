@@ -43,49 +43,71 @@ def _bench_owl(client: OwlClient) -> dict[str, Any]:
     close_times: list[float] = []
     cycle_times: list[float] = []
 
+    errors = 0
+    MAX_RETRIES = 3
+
     for i in range(ITERATIONS):
-        cycle_start = time.perf_counter()
-        context_id: str | None = None
-        try:
-            # Create context
-            t0 = time.perf_counter()
-            resp = client._execute("browser_create_context", {"screen_size": "1920x1080"})
-            create_ms = (time.perf_counter() - t0) * 1000
-            create_times.append(create_ms)
-            context_id = str(resp["context_id"])
+        retries = 0
+        success = False
 
-            # Navigate
-            t0 = time.perf_counter()
-            client._execute("browser_navigate", {
-                "context_id": context_id,
-                "url": TARGET_URL,
-                "wait_until": "domcontentloaded",
-            })
-            navigate_ms = (time.perf_counter() - t0) * 1000
-            navigate_times.append(navigate_ms)
+        while retries < MAX_RETRIES and not success:
+            context_id: str | None = None
+            try:
+                cycle_start = time.perf_counter()
 
-            # Screenshot
-            t0 = time.perf_counter()
-            client._execute("browser_screenshot", {"context_id": context_id})
-            screenshot_ms = (time.perf_counter() - t0) * 1000
-            screenshot_times.append(screenshot_ms)
-
-        finally:
-            if context_id:
+                # Create context
                 t0 = time.perf_counter()
-                try:
-                    client._execute("browser_close_context", {"context_id": context_id})
-                except Exception:
-                    pass
+                resp = client._execute("browser_create_context", {"screen_size": "1920x1080"})
+                create_ms = (time.perf_counter() - t0) * 1000
+                context_id = str(resp["context_id"])
+
+                # Navigate
+                t0 = time.perf_counter()
+                client._execute("browser_navigate", {
+                    "context_id": context_id,
+                    "url": TARGET_URL,
+                    "wait_until": "domcontentloaded",
+                })
+                navigate_ms = (time.perf_counter() - t0) * 1000
+
+                # Screenshot
+                t0 = time.perf_counter()
+                client._execute("browser_screenshot", {"context_id": context_id})
+                screenshot_ms = (time.perf_counter() - t0) * 1000
+
+                # Close
+                t0 = time.perf_counter()
+                client._execute("browser_close_context", {"context_id": context_id})
+                context_id = None
                 close_ms = (time.perf_counter() - t0) * 1000
+
+                cycle_ms = (time.perf_counter() - cycle_start) * 1000
+
+                create_times.append(create_ms)
+                navigate_times.append(navigate_ms)
+                screenshot_times.append(screenshot_ms)
                 close_times.append(close_ms)
+                cycle_times.append(cycle_ms)
+                success = True
 
-        cycle_ms = (time.perf_counter() - cycle_start) * 1000
-        cycle_times.append(cycle_ms)
-        logger.info("  [%d/%d] create=%.0fms nav=%.0fms shot=%.0fms cycle=%.0fms",
-                     i + 1, ITERATIONS, create_ms, navigate_ms, screenshot_ms, cycle_ms)
+                if (i + 1) % 100 == 0 or i == 0:
+                    logger.info("  [%d/%d] create=%.0fms nav=%.0fms shot=%.0fms cycle=%.0fms",
+                                 i + 1, ITERATIONS, create_ms, navigate_ms, screenshot_ms, cycle_ms)
+            except Exception as exc:
+                retries += 1
+                if context_id:
+                    try:
+                        client._execute("browser_close_context", {"context_id": context_id})
+                    except Exception:
+                        pass
+                if retries >= MAX_RETRIES:
+                    errors += 1
+                    logger.warning("  [%d/%d] failed after %d retries: %s", i + 1, ITERATIONS, MAX_RETRIES, exc)
 
+    logger.info("Owl: %d completed, %d errors", len(create_times), errors)
     return {
+        "completed": len(create_times),
+        "errors": errors,
         "context_creation": _stats(create_times),
         "navigation": _stats(navigate_times),
         "screenshot": _stats(screenshot_times),
@@ -112,44 +134,73 @@ def _bench_playwright() -> dict[str, Any]:
     close_times: list[float] = []
     cycle_times: list[float] = []
     version = "unknown"
+    errors = 0
+    MAX_RETRIES = 3
 
     with sync_playwright() as pw:
         version = pw.chromium.name
         for i in range(ITERATIONS):
-            cycle_start = time.perf_counter()
+            retries = 0
+            success = False
 
-            # Launch browser (cold start)
-            t0 = time.perf_counter()
-            browser = pw.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1920, "height": 1080})
-            launch_ms = (time.perf_counter() - t0) * 1000
-            launch_times.append(launch_ms)
+            while retries < MAX_RETRIES and not success:
+                browser = None
+                try:
+                    cycle_start = time.perf_counter()
 
-            # Navigate
-            t0 = time.perf_counter()
-            page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
-            navigate_ms = (time.perf_counter() - t0) * 1000
-            navigate_times.append(navigate_ms)
+                    # Launch browser (cold start)
+                    t0 = time.perf_counter()
+                    browser = pw.chromium.launch(
+                        headless=True,
+                        args=["--ignore-certificate-errors"],
+                    )
+                    page = browser.new_page(viewport={"width": 1920, "height": 1080})
+                    launch_ms = (time.perf_counter() - t0) * 1000
 
-            # Screenshot
-            t0 = time.perf_counter()
-            page.screenshot()
-            screenshot_ms = (time.perf_counter() - t0) * 1000
-            screenshot_times.append(screenshot_ms)
+                    # Navigate
+                    t0 = time.perf_counter()
+                    page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
+                    navigate_ms = (time.perf_counter() - t0) * 1000
 
-            # Close
-            t0 = time.perf_counter()
-            browser.close()
-            close_ms = (time.perf_counter() - t0) * 1000
-            close_times.append(close_ms)
+                    # Screenshot
+                    t0 = time.perf_counter()
+                    page.screenshot()
+                    screenshot_ms = (time.perf_counter() - t0) * 1000
 
-            cycle_ms = (time.perf_counter() - cycle_start) * 1000
-            cycle_times.append(cycle_ms)
-            logger.info("  [%d/%d] launch=%.0fms nav=%.0fms shot=%.0fms cycle=%.0fms",
-                         i + 1, ITERATIONS, launch_ms, navigate_ms, screenshot_ms, cycle_ms)
+                    # Close
+                    t0 = time.perf_counter()
+                    browser.close()
+                    browser = None
+                    close_ms = (time.perf_counter() - t0) * 1000
 
+                    cycle_ms = (time.perf_counter() - cycle_start) * 1000
+
+                    launch_times.append(launch_ms)
+                    navigate_times.append(navigate_ms)
+                    screenshot_times.append(screenshot_ms)
+                    close_times.append(close_ms)
+                    cycle_times.append(cycle_ms)
+                    success = True
+
+                    if (i + 1) % 100 == 0 or i == 0:
+                        logger.info("  [%d/%d] launch=%.0fms nav=%.0fms shot=%.0fms cycle=%.0fms",
+                                     i + 1, ITERATIONS, launch_ms, navigate_ms, screenshot_ms, cycle_ms)
+                except Exception as exc:
+                    retries += 1
+                    if browser:
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                    if retries >= MAX_RETRIES:
+                        errors += 1
+                        logger.warning("  [%d/%d] failed after %d retries: %s", i + 1, ITERATIONS, MAX_RETRIES, exc)
+
+    logger.info("Playwright: %d completed, %d errors", len(launch_times), errors)
     return {
         "version": version,
+        "completed": len(launch_times),
+        "errors": errors,
         "browser_launch": _stats(launch_times),
         "navigation": _stats(navigate_times),
         "screenshot": _stats(screenshot_times),
