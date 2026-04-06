@@ -1,10 +1,24 @@
-# Owl Detection Report Generator
+# Owl Detection Report & Benchmark Generator
 
-Automated daily comparison of [Owl Browser](https://owlbrowser.net) vs vanilla Playwright and Puppeteer on [CreepJS](https://abrahamjuliot.github.io/creepjs/) — the industry-standard fingerprint detection tool.
-
-Generates a structured JSON report with screenshots showing that Owl Browser produces unique fingerprints per OS profile while Playwright and Puppeteer leak identical real device fingerprints.
+Automated daily comparison of [Owl Browser](https://owlbrowser.net) vs vanilla Playwright and Puppeteer on [CreepJS](https://abrahamjuliot.github.io/creepjs/) — the industry-standard fingerprint detection tool. Also includes a performance benchmark mode.
 
 Results are displayed at [owlbrowser.net/detection-test](https://owlbrowser.net/detection-test).
+
+## What this generates
+
+### Detection Report (default)
+Screenshots and parsed fingerprint data showing:
+- **Playwright & Puppeteer** have identical fingerprint hashes (canvas, WebGL, audio, fonts) — they leak the real device
+- **Owl Browser** has completely different hashes per OS profile — genuine C++ source-level spoofing
+- Headless detection: Playwright `100%`, Puppeteer `100%`, Owl Browser `0%`
+- GPU: Playwright/Puppeteer expose SwiftShader (dead giveaway), Owl shows real GPU profiles
+
+### Performance Benchmark (`--benchmark`)
+Times cold start, navigation, screenshot, and full cycle for all three browsers:
+- 10 sequential iterations per browser
+- Statistics: min, max, avg, median, p95
+- Raw timing data included for reproducibility
+- Same machine, same container, same network — fair comparison
 
 ## Quick Start
 
@@ -32,7 +46,7 @@ S3_BUCKET=your-bucket
 S3_PREFIX=detection-reports
 ```
 
-### 3. Run
+### 3. Run detection report
 
 ```bash
 docker run --rm \
@@ -41,17 +55,30 @@ docker run --rm \
   ghcr.io/olib-ai/owl-detection-report:latest
 ```
 
-### 4. Set up daily cron
+### 4. Run benchmark
 
 ```bash
-# Edit crontab
-crontab -e
-
-# Add this line (runs daily at 3am UTC)
-0 3 * * * docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/output:/output \
+  ghcr.io/olib-ai/owl-detection-report:latest --benchmark
 ```
 
-> **Note:** When using S3 upload, the `-v` volume mount is optional since the report goes directly to S3. Include it if you also want a local copy.
+### 5. Set up daily cron
+
+```bash
+crontab -e
+```
+
+```cron
+# Detection report — daily at 3am UTC
+0 3 * * * docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
+
+# Benchmark — weekly on Sunday at 4am UTC
+0 4 * * 0 docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
+```
+
+> When using S3 upload, the `-v` volume mount is optional since files go directly to S3.
 
 ## Build from source
 
@@ -59,7 +86,12 @@ crontab -e
 git clone https://github.com/Olib-AI/owl-detection-report.git
 cd owl-detection-report
 docker build -t owl-detection-report .
+
+# Detection report
 docker run --rm --env-file .env -v $(pwd)/output:/output owl-detection-report
+
+# Benchmark
+docker run --rm --env-file .env -v $(pwd)/output:/output owl-detection-report --benchmark
 ```
 
 ## Environment Variables
@@ -78,6 +110,7 @@ docker run --rm --env-file .env -v $(pwd)/output:/output owl-detection-report
 
 ## Output
 
+### Detection report
 ```
 /output/
   report.json           # Parsed metrics + screenshot paths
@@ -89,27 +122,30 @@ docker run --rm --env-file .env -v $(pwd)/output:/output owl-detection-report
     owl-linux.webp      # Owl Browser with Linux profile
 ```
 
-The report is overwritten on each run — no historical data stored.
+### Benchmark
+```
+/output/
+  benchmark.json        # Timing data for all three browsers
+```
 
-## How It Works
+Both files are overwritten on each run — no historical data stored.
 
-1. Launches vanilla **Playwright** Chromium against CreepJS (baseline)
-2. Launches vanilla **Puppeteer** Chromium against CreepJS (baseline)
-3. Launches **Owl Browser** with Windows, macOS, and Linux OS profiles against CreepJS
-4. For each browser: captures a full-page screenshot and extracts detection metrics
-5. Builds `report.json` with parsed fingerprint hashes, headless detection scores, GPU info, etc.
-6. Optionally uploads everything to S3
+## Benchmark Methodology
 
-### What the report shows
+All three browsers are benchmarked sequentially in the same Docker container on the same machine:
 
-- **Playwright & Puppeteer** have identical fingerprint hashes (canvas, WebGL, audio, fonts) — they leak the real device
-- **Owl Browser** has completely different hashes per OS profile — genuine C++ source-level spoofing
-- Headless detection: Playwright `100%`, Puppeteer `100%`, Owl Browser `0%`
-- GPU: Playwright/Puppeteer expose SwiftShader (dead giveaway), Owl shows real GPU profiles
+1. **Cold start** — Playwright/Puppeteer: launch a new browser process + create page. Owl Browser: create a new context within the running engine.
+2. **Navigation** — Navigate to `https://example.com` and wait for `networkidle`.
+3. **Screenshot** — Capture a viewport screenshot.
+4. **Full cycle** — Create → navigate → screenshot → close.
+
+Each step is timed individually. 10 iterations per browser. Results include min, max, avg, median, p95, and raw timing arrays so anyone can verify.
+
+The architectural difference: Playwright and Puppeteer launch a new OS process for each browser instance. Owl Browser creates lightweight contexts within an already-running engine — no process spawn overhead.
 
 ## VPS Deployment
 
-### On the VPS (one-time setup)
+### One-time setup
 
 ```bash
 # Login to GitHub Container Registry
@@ -119,13 +155,17 @@ echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password
 sudo nano /etc/owl-report.env
 # Paste your production config (OWL_BROWSER_URL, token, AWS creds)
 
-# Test run
+# Test detection report
 docker pull ghcr.io/olib-ai/owl-detection-report:latest
 docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest
+
+# Test benchmark
+docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark
 
 # Set up cron
 crontab -e
 # 0 3 * * * docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
+# 0 4 * * 0 docker run --rm --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
 ```
 
 ### Updating

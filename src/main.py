@@ -8,14 +8,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .baseline_runner import run_baseline
-from .puppeteer_runner import run_puppeteer_baseline
-from .creepjs_parser import parse_creepjs
-from .owl_client import OwlClient
-from .report_builder import build_report, write_report, result_to_dict
-from .screenshot import save_webp
-from .s3_uploader import s3_configured, upload_directory
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -26,7 +18,16 @@ logger = logging.getLogger("owl-detection-report")
 PROFILES = ["windows", "macos", "linux"]
 
 
-def main() -> int:
+def run_detection_report() -> int:
+    """Generate the CreepJS detection comparison report."""
+    from .baseline_runner import run_baseline
+    from .puppeteer_runner import run_puppeteer_baseline
+    from .creepjs_parser import parse_creepjs
+    from .owl_client import OwlClient
+    from .report_builder import build_report, write_report, result_to_dict
+    from .screenshot import save_webp
+    from .s3_uploader import s3_configured, upload_directory
+
     owl_url = os.environ.get("OWL_BROWSER_URL")
     owl_token = os.environ.get("OWL_BROWSER_TOKEN")
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/output"))
@@ -120,6 +121,25 @@ def main() -> int:
 
     logger.info("=== Done ===")
     return 0
+
+
+def main() -> int:
+    mode = sys.argv[1] if len(sys.argv) > 1 else "report"
+
+    if mode == "--benchmark":
+        from .benchmark import run_benchmark
+
+        owl_url = os.environ.get("OWL_BROWSER_URL")
+        owl_token = os.environ.get("OWL_BROWSER_TOKEN")
+        output_dir = Path(os.environ.get("OUTPUT_DIR", "/output"))
+
+        if not owl_url or not owl_token:
+            logger.error("OWL_BROWSER_URL and OWL_BROWSER_TOKEN are required")
+            return 1
+
+        return run_benchmark(owl_url, owl_token, output_dir)
+    else:
+        return run_detection_report()
 
 
 if __name__ == "__main__":
