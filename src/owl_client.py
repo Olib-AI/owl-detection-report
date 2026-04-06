@@ -10,6 +10,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+import os
+
 WAIT_TIME_MS = 15_000
 REQUEST_TIMEOUT = 90
 
@@ -26,13 +28,15 @@ class OwlClient:
     def __init__(self, base_url: str, token: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._token = token
+        # /api prefix for nginx proxy, empty for direct connection to port 8080
+        self._api_prefix = os.environ.get("OWL_API_PREFIX", "/api")
         self._session = requests.Session()
         self._session.headers.update(
             {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         )
 
     def _execute(self, tool_name: str, payload: dict[str, object] | None = None) -> object:
-        url = f"{self._base_url}/execute/{tool_name}"
+        url = f"{self._base_url}{self._api_prefix}/execute/{tool_name}"
         logger.debug("POST %s %s", url, payload)
         resp = self._session.post(url, json=payload or {}, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
