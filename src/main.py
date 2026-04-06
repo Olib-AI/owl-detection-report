@@ -22,6 +22,7 @@ def run_detection_report() -> int:
     """Generate the CreepJS detection comparison report."""
     from .baseline_runner import run_baseline
     from .puppeteer_runner import run_puppeteer_baseline
+    from .stealth_runners import run_playwright_stealth, run_puppeteer_stealth
     from .creepjs_parser import parse_creepjs
     from .owl_client import OwlClient
     from .report_builder import build_report, write_report, result_to_dict
@@ -66,7 +67,33 @@ def run_detection_report() -> int:
     except Exception:
         logger.error("Puppeteer baseline failed", exc_info=True)
 
-    # Step 3: Owl Browser version + per-OS profiles
+    # Step 3: Playwright + stealth plugin
+    logger.info("=== Running Playwright + stealth ===")
+    playwright_stealth_parsed = None
+    playwright_stealth_version = "unknown"
+    try:
+        pws = run_playwright_stealth()
+        playwright_stealth_version = pws.version
+        save_webp(pws.screenshot_png, shots_dir / "playwright-stealth.webp")
+        playwright_stealth_parsed = result_to_dict(parse_creepjs(pws.text), "screenshots/playwright-stealth.webp")
+        logger.info("Playwright stealth complete (version: %s)", playwright_stealth_version)
+    except Exception:
+        logger.error("Playwright stealth failed", exc_info=True)
+
+    # Step 4: Puppeteer + stealth plugin
+    logger.info("=== Running Puppeteer + stealth ===")
+    puppeteer_stealth_parsed = None
+    puppeteer_stealth_version = "unknown"
+    try:
+        pups = run_puppeteer_stealth()
+        puppeteer_stealth_version = pups.version
+        save_webp(pups.screenshot_png, shots_dir / "puppeteer-stealth.webp")
+        puppeteer_stealth_parsed = result_to_dict(parse_creepjs(pups.text), "screenshots/puppeteer-stealth.webp")
+        logger.info("Puppeteer stealth complete (version: %s)", puppeteer_stealth_version)
+    except Exception:
+        logger.error("Puppeteer stealth failed", exc_info=True)
+
+    # Step 5: Owl Browser version + per-OS profiles
     client = OwlClient(owl_url, owl_token)
     owl_version = client.get_version()
     logger.info("Owl Browser version: %s", owl_version)
@@ -90,6 +117,10 @@ def run_detection_report() -> int:
             profile_data["playwright"] = playwright_parsed
         if puppeteer_parsed is not None:
             profile_data["puppeteer"] = puppeteer_parsed
+        if playwright_stealth_parsed is not None:
+            profile_data["playwright_stealth"] = playwright_stealth_parsed
+        if puppeteer_stealth_parsed is not None:
+            profile_data["puppeteer_stealth"] = puppeteer_stealth_parsed
 
         if profile_data:
             profiles[profile_os] = profile_data
@@ -105,6 +136,8 @@ def run_detection_report() -> int:
         owl_version=owl_version,
         playwright_version=playwright_version,
         puppeteer_version=puppeteer_version,
+        playwright_stealth_version=playwright_stealth_version,
+        puppeteer_stealth_version=puppeteer_stealth_version,
     )
     write_report(report, output_dir)
 

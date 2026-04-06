@@ -26,12 +26,16 @@ def build_report(
     owl_version: str = "unknown",
     playwright_version: str = "unknown",
     puppeteer_version: str = "unknown",
+    playwright_stealth_version: str = "unknown",
+    puppeteer_stealth_version: str = "unknown",
 ) -> dict[str, Any]:
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "owl_version": owl_version,
         "playwright_version": playwright_version,
         "puppeteer_version": puppeteer_version,
+        "playwright_stealth_version": playwright_stealth_version,
+        "puppeteer_stealth_version": puppeteer_stealth_version,
         "profiles": profiles,
     }
 
