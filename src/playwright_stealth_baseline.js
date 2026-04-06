@@ -30,7 +30,7 @@ function findChromium() {
 
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setViewportSize({ width: 1920, height: 1080 });
 
     await page.goto(CREEPJS_URL, { waitUntil: 'networkidle', timeout: 60000 });
     await page.waitForTimeout(WAIT_MS);
