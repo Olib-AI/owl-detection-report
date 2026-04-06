@@ -1,7 +1,8 @@
-"""Benchmark runner — measures cold start, navigation, screenshot, and full cycle times."""
+"""Benchmark runner — measures cold start, navigation, screenshot, full cycle, and concurrency."""
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import statistics
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 TARGET_URL = "https://example.com"
 ITERATIONS = 1000
+CONCURRENCY_LEVELS = [1, 10, 25, 50, 100]
 
 
 def _stats(times: list[float]) -> dict[str, float]:
@@ -235,6 +237,162 @@ def _bench_puppeteer() -> dict[str, Any]:
     return data
 
 
+def _concurrent_owl(client: OwlClient, n: int) -> dict[str, Any]:
+    """Spawn N Owl Browser contexts concurrently, navigate, screenshot, close."""
+
+    def _single_session(_: int) -> dict[str, Any]:
+        context_id = None
+        try:
+            t0 = time.perf_counter()
+            resp = client._execute("browser_create_context", {"screen_size": "1920x1080"})
+            context_id = str(resp["context_id"])
+            create_ms = (time.perf_counter() - t0) * 1000
+
+            t0 = time.perf_counter()
+            client._execute("browser_navigate", {
+                "context_id": context_id,
+                "url": TARGET_URL,
+                "wait_until": "domcontentloaded",
+            })
+            nav_ms = (time.perf_counter() - t0) * 1000
+
+            t0 = time.perf_counter()
+            client._execute("browser_screenshot", {"context_id": context_id})
+            shot_ms = (time.perf_counter() - t0) * 1000
+
+            return {"success": True, "create": create_ms, "navigate": nav_ms, "screenshot": shot_ms}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+        finally:
+            if context_id:
+                try:
+                    client._execute("browser_close_context", {"context_id": context_id})
+                except Exception:
+                    pass
+
+    t_start = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
+        futures = [pool.submit(_single_session, i) for i in range(n)]
+        results = [f.result() for f in futures]
+    total_ms = (time.perf_counter() - t_start) * 1000
+
+    succeeded = [r for r in results if r["success"]]
+    return {
+        "sessions": n,
+        "succeeded": len(succeeded),
+        "failed": n - len(succeeded),
+        "total_time_ms": round(total_ms, 2),
+        "avg_create_ms": round(statistics.mean(r["create"] for r in succeeded), 2) if succeeded else 0,
+        "avg_navigate_ms": round(statistics.mean(r["navigate"] for r in succeeded), 2) if succeeded else 0,
+        "avg_screenshot_ms": round(statistics.mean(r["screenshot"] for r in succeeded), 2) if succeeded else 0,
+    }
+
+
+def _concurrent_playwright(n: int) -> dict[str, Any]:
+    """Spawn N Playwright browser instances concurrently."""
+    from playwright.sync_api import sync_playwright
+
+    def _single_session(_: int) -> dict[str, Any]:
+        try:
+            with sync_playwright() as pw:
+                t0 = time.perf_counter()
+                browser = pw.chromium.launch(
+                    headless=True,
+                    args=["--ignore-certificate-errors"],
+                )
+                page = browser.new_page(viewport={"width": 1920, "height": 1080})
+                launch_ms = (time.perf_counter() - t0) * 1000
+
+                t0 = time.perf_counter()
+                page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=30_000)
+                nav_ms = (time.perf_counter() - t0) * 1000
+
+                t0 = time.perf_counter()
+                page.screenshot()
+                shot_ms = (time.perf_counter() - t0) * 1000
+
+                browser.close()
+                return {"success": True, "launch": launch_ms, "navigate": nav_ms, "screenshot": shot_ms}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
+    t_start = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
+        futures = [pool.submit(_single_session, i) for i in range(n)]
+        results = [f.result() for f in futures]
+    total_ms = (time.perf_counter() - t_start) * 1000
+
+    succeeded = [r for r in results if r["success"]]
+    return {
+        "sessions": n,
+        "succeeded": len(succeeded),
+        "failed": n - len(succeeded),
+        "total_time_ms": round(total_ms, 2),
+        "avg_launch_ms": round(statistics.mean(r["launch"] for r in succeeded), 2) if succeeded else 0,
+        "avg_navigate_ms": round(statistics.mean(r["navigate"] for r in succeeded), 2) if succeeded else 0,
+        "avg_screenshot_ms": round(statistics.mean(r["screenshot"] for r in succeeded), 2) if succeeded else 0,
+    }
+
+
+def _concurrent_puppeteer(n: int) -> dict[str, Any]:
+    """Spawn N Puppeteer browser instances concurrently via Node.js."""
+    import subprocess
+
+    script = Path(__file__).parent / "puppeteer_concurrency.js"
+    result = subprocess.run(
+        ["node", str(script), str(n), TARGET_URL],
+        capture_output=True, text=True, timeout=300,
+    )
+    if result.returncode != 0:
+        logger.error("Puppeteer concurrency stderr: %s", result.stderr)
+        return {"sessions": n, "succeeded": 0, "failed": n, "total_time_ms": 0, "error": result.stderr[:500]}
+
+    return json.loads(result.stdout)
+
+
+def _bench_concurrency(client: OwlClient) -> dict[str, Any]:
+    """Run concurrency benchmarks at increasing session counts."""
+    logger.info("=== Concurrency Benchmark (levels: %s) ===", CONCURRENCY_LEVELS)
+
+    results: dict[str, list[dict[str, Any]]] = {
+        "owl": [],
+        "playwright": [],
+        "puppeteer": [],
+    }
+
+    for n in CONCURRENCY_LEVELS:
+        logger.info("--- %d concurrent sessions ---", n)
+
+        # Owl
+        try:
+            owl_r = _concurrent_owl(client, n)
+            results["owl"].append(owl_r)
+            logger.info("  Owl: %d/%d succeeded in %.0fms", owl_r["succeeded"], n, owl_r["total_time_ms"])
+        except Exception:
+            logger.error("  Owl concurrency failed at %d", n, exc_info=True)
+            results["owl"].append({"sessions": n, "succeeded": 0, "failed": n, "total_time_ms": 0})
+
+        # Playwright
+        try:
+            pw_r = _concurrent_playwright(n)
+            results["playwright"].append(pw_r)
+            logger.info("  Playwright: %d/%d succeeded in %.0fms", pw_r["succeeded"], n, pw_r["total_time_ms"])
+        except Exception:
+            logger.error("  Playwright concurrency failed at %d", n, exc_info=True)
+            results["playwright"].append({"sessions": n, "succeeded": 0, "failed": n, "total_time_ms": 0})
+
+        # Puppeteer
+        try:
+            pup_r = _concurrent_puppeteer(n)
+            results["puppeteer"].append(pup_r)
+            logger.info("  Puppeteer: %d/%d succeeded in %.0fms", pup_r.get("succeeded", 0), n, pup_r.get("total_time_ms", 0))
+        except Exception:
+            logger.error("  Puppeteer concurrency failed at %d", n, exc_info=True)
+            results["puppeteer"].append({"sessions": n, "succeeded": 0, "failed": n, "total_time_ms": 0})
+
+    return results
+
+
 def run_benchmark(owl_url: str, owl_token: str, output_dir: Path) -> int:
     """Run benchmarks for all three browsers and write results."""
     from datetime import datetime, timezone
@@ -288,6 +446,23 @@ def run_benchmark(owl_url: str, owl_token: str, output_dir: Path) -> int:
     if not results["browsers"]:
         logger.error("All benchmarks failed.")
         return 1
+
+    # Concurrency benchmark
+    try:
+        concurrency = _bench_concurrency(client)
+        results["concurrency"] = {
+            "levels": CONCURRENCY_LEVELS,
+            "methodology": (
+                f"At each concurrency level ({', '.join(str(n) for n in CONCURRENCY_LEVELS)} sessions), "
+                "all sessions launch simultaneously and each performs: create → navigate (domcontentloaded) → screenshot → close. "
+                "Playwright and Puppeteer each launch a separate browser process per session. "
+                "Owl Browser creates lightweight contexts within a single running engine. "
+                "Total time = wall clock from first launch to last completion."
+            ),
+            "browsers": concurrency,
+        }
+    except Exception:
+        logger.error("Concurrency benchmark failed", exc_info=True)
 
     # Write report
     report_path = output_dir / "benchmark.json"
