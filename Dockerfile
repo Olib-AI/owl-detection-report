@@ -38,7 +38,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 # Puppeteer-core + stealth plugins (uses Playwright's Chromium — no extra download)
 RUN npm init -y > /dev/null 2>&1 \
-    && npm install puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth playwright-extra
+    && npm install puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth playwright-core playwright-extra
 
 COPY src/ src/
 
