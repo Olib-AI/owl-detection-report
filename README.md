@@ -1,8 +1,8 @@
 # Owl Detection Report & Benchmark Generator
 
-Automated daily comparison of [Owl Browser](https://owlbrowser.net) vs vanilla Playwright and Puppeteer on [CreepJS](https://abrahamjuliot.github.io/creepjs/) — the industry-standard fingerprint detection tool. Also includes a performance benchmark mode.
+Automated comparison of [Owl Browser](https://owlbrowser.net) vs vanilla Playwright and Puppeteer on [CreepJS](https://abrahamjuliot.github.io/creepjs/) — the industry-standard fingerprint detection tool. Run per release to verify detection and performance. Also includes a performance benchmark mode.
 
-Results are displayed at [owlbrowser.net/detection-test](https://owlbrowser.net/detection-test).
+Results are displayed at [owlbrowser.net/benchmark](https://owlbrowser.net/benchmark).
 
 ## What this generates
 
@@ -78,19 +78,9 @@ docker run --rm \
   ghcr.io/olib-ai/owl-detection-report:latest --concurrency
 ```
 
-### 6. Set up daily cron
+### 6. When to run
 
-```bash
-crontab -e
-```
-
-```cron
-# Detection report — daily at 3am UTC
-0 3 * * * docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
-
-# Benchmark — weekly on Sunday at 4am UTC
-0 4 * * 0 docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
-```
+Run the detection report and benchmark **per Owl Browser release** — results only change when the browser updates. No need for daily cron.
 
 > When using S3 upload, the `-v` volume mount is optional since files go directly to S3.
 
@@ -176,15 +166,11 @@ docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/ow
 # Test benchmark
 docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark
 
-# Set up cron
-crontab -e
-# 0 3 * * * docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest >> /var/log/owl-report.log 2>&1
-# 0 4 * * 0 docker run --rm --network host --env-file /etc/owl-report.env ghcr.io/olib-ai/owl-detection-report:latest --benchmark >> /var/log/owl-benchmark.log 2>&1
+# Run per release — no cron needed
 ```
 
 ### Updating
 
 ```bash
 docker pull ghcr.io/olib-ai/owl-detection-report:latest
-# Next cron run will use the new image
 ```
